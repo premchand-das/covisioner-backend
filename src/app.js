@@ -35,12 +35,16 @@ app.use(limiter);
 
 
 app.use(helmet());
-app.use(cors({
-  origin:[
-    "http://localhost:3000",
-    ],
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      process.env.CLIENT_URL,
+      process.env.FRONTEND_URL,
+    ].filter(Boolean),
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 app.use(
