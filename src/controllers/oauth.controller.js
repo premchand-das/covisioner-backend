@@ -32,7 +32,9 @@ export const oauthCallback = async (req, res) => {
     }
 
     if (!user.role) {
-      return res.redirect(`${process.env.FRONTEND_URL}/signup?error=role_required`);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/signup?error=role_required`
+      );
     }
 
     const accessToken = generateAccessToken(user);
@@ -47,33 +49,38 @@ export const oauthCallback = async (req, res) => {
 
     await user.save();
 
-    res.cookie("accessToken", accessToken, {
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
+    };
+
+    res.cookie("accessToken", accessToken, {
+      ...cookieOptions,
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...cookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    const frontendUrl = process.env.FRONTEND_URL;
+
     if (!user.onboardingCompleted) {
-      return res.redirect(`${process.env.FRONTEND_URL}/onboarding`);
+      return res.redirect(`${frontendUrl}/onboarding`);
     }
 
     if (user.role === "talent") {
-      return res.redirect(`${process.env.FRONTEND_URL}/talent/explore/startups`);
+      return res.redirect(`${frontendUrl}/talent/saved-jobs`);
     }
 
     if (user.role === "startup") {
-      return res.redirect(`${process.env.FRONTEND_URL}/startup/startups`);
+      return res.redirect(`${frontendUrl}/startup/dashboard`);
     }
 
-    return res.redirect(`${process.env.FRONTEND_URL}/onboarding`);
+    return res.redirect(`${frontendUrl}/onboarding`);
   } catch (error) {
     console.log("OAUTH CALLBACK ERROR:", error);
 
