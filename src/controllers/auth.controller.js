@@ -14,6 +14,7 @@ const cookieOptions = {
   httpOnly: true,
   secure: isProduction,
   sameSite: isProduction ? "none" : "lax",
+  path: "/",
 };
 
 const accessCookieOptions = {
@@ -48,17 +49,32 @@ const createVerificationCode = () =>
 const hashToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
-// 🔐 REGISTER
+// REGISTER
 export const register = async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
 
-    const existingUser = await User.findOne({ email });
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedUsername = String(username || "").trim();
+
+    if (!normalizedUsername || !normalizedEmail || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
+    }
+
+    const existingUser = await User.findOne({
+      $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
+    });
 
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "User already exists",
+        message:
+          existingUser.email === normalizedEmail
+            ? "User already exists"
+            : "Username already taken",
       });
     }
 
@@ -66,31 +82,36 @@ export const register = async (req, res) => {
     const verificationCode = createVerificationCode();
 
     const user = await User.create({
-      username,
-      email,
+      username: normalizedUsername,
+      email: normalizedEmail,
       password: hashedPassword,
       role,
       authProvider: "email",
       isVerified: false,
+      onboardingCompleted: false,
       emailVerificationCode: verificationCode,
       emailVerificationCodeExpires: Date.now() + 10 * 60 * 1000,
     });
 
-    await sendEmail({
-      to: user.email,
-      subject: "Verify your email",
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
-          <h2>Verify your email address</h2>
-          <p>Welcome to CoVisioner. Use this code to verify your email.</p>
-          <div style="font-size:34px;font-weight:700;letter-spacing:8px;margin:28px 0;">
-            ${verificationCode}
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Verify your email",
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
+            <h2>Verify your email address</h2>
+            <p>Welcome to CoVisioner. Use this code to verify your email.</p>
+            <div style="font-size:34px;font-weight:700;letter-spacing:8px;margin:28px 0;">
+              ${verificationCode}
+            </div>
+            <p>This code expires in 10 minutes.</p>
+            <p>If you didn’t create an account, you can ignore this email.</p>
           </div>
-          <p>This code expires in 10 minutes.</p>
-          <p>If you didn’t create an account, you can ignore this email.</p>
-        </div>
-      `,
-    });
+        `,
+      });
+    } catch (emailError) {
+      console.log("EMAIL SEND ERROR:", emailError);
+    }
 
     return res.status(201).json({
       success: true,
@@ -107,12 +128,15 @@ export const register = async (req, res) => {
   }
 };
 
-// ✅ VERIFY EMAIL
+// VERIFY EMAIL
 export const verifyEmailCode = async (req, res) => {
   try {
     const { email, code } = req.body;
 
-    const user = await User.findOne({ email }).select(
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedCode = String(code || "").trim();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
       "+emailVerificationCode +emailVerificationCodeExpires"
     );
 
@@ -131,7 +155,7 @@ export const verifyEmailCode = async (req, res) => {
     }
 
     if (
-      user.emailVerificationCode !== code ||
+      user.emailVerificationCode !== normalizedCode ||
       !user.emailVerificationCodeExpires ||
       user.emailVerificationCodeExpires < Date.now()
     ) {
@@ -150,6 +174,7 @@ export const verifyEmailCode = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Email verified successfully. You can now login.",
+      user: getSafeUser(user),
     });
   } catch (error) {
     console.log("VERIFY EMAIL ERROR:", error);
@@ -161,12 +186,14 @@ export const verifyEmailCode = async (req, res) => {
   }
 };
 
-// 🔐 LOGIN
+// LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email }).select(
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
       "+password +refreshTokens"
     );
 
@@ -205,8 +232,6 @@ export const login = async (req, res) => {
 
     await user.save();
 
-    
-
     res.cookie("accessToken", accessToken, accessCookieOptions);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 
@@ -226,7 +251,7 @@ export const login = async (req, res) => {
   }
 };
 
-// 🎭 SET ROLE
+// SET ROLE
 export const setUserRole = async (req, res) => {
   try {
     const { role } = req.body;
@@ -258,7 +283,7 @@ export const setUserRole = async (req, res) => {
   }
 };
 
-// 🚪 LOGOUT
+// LOGOUT
 export const logout = async (req, res) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
@@ -287,7 +312,7 @@ export const logout = async (req, res) => {
   }
 };
 
-// ♻️ REFRESH ACCESS TOKEN
+// REFRESH ACCESS TOKEN
 export const refreshAccessToken = async (req, res) => {
   try {
     const oldRefreshToken = req.cookies?.refreshToken;
@@ -312,7 +337,18 @@ export const refreshAccessToken = async (req, res) => {
       });
     }
 
-    const user = await User.findById(decoded.id).select("+refreshTokens");
+    const userId = decoded.id || decoded._id;
+
+    if (!userId) {
+      clearAuthCookies(res);
+
+      return res.status(403).json({
+        success: false,
+        message: "Invalid refresh token payload",
+      });
+    }
+
+    const user = await User.findById(userId).select("+refreshTokens");
 
     if (!user || !user.refreshTokens?.includes(oldRefreshToken)) {
       if (user) {
@@ -362,7 +398,7 @@ export const refreshAccessToken = async (req, res) => {
   }
 };
 
-// 👤 GET ME
+// GET ME
 export const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -388,7 +424,7 @@ export const getMe = async (req, res) => {
   }
 };
 
-// ✅ COMPLETE ONBOARDING
+// COMPLETE ONBOARDING
 export const completeOnboarding = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -400,7 +436,7 @@ export const completeOnboarding = async (req, res) => {
       });
     }
 
-    user.onboardingCompleted = false;
+    user.onboardingCompleted = true;
     await user.save();
 
     return res.status(200).json({
@@ -418,7 +454,7 @@ export const completeOnboarding = async (req, res) => {
   }
 };
 
-// 🔑 FORGOT PASSWORD
+// FORGOT PASSWORD
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -428,7 +464,9 @@ export const forgotPassword = async (req, res) => {
       message: "If an account exists, a password reset link has been sent",
     };
 
-    const user = await User.findOne({ email }).select(
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
       "+resetPasswordToken +resetPasswordExpires"
     );
 
@@ -443,25 +481,36 @@ export const forgotPassword = async (req, res) => {
 
     await user.save();
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const frontendUrl = process.env.FRONTEND_URL;
 
-    await sendEmail({
-      to: user.email,
-      subject: "Reset your password",
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
-          <h2>Password Reset Request</h2>
-          <p>You requested to reset your password.</p>
-          <p>Click below to create a new password. This link expires in 10 minutes.</p>
-          <a href="${resetUrl}" style="display:inline-block;background:#000;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600;">
-            Reset Password
-          </a>
-          <p style="margin-top:24px;color:#666;font-size:14px;">
-            If you did not request this, you can ignore this email.
-          </p>
-        </div>
-      `,
-    });
+    if (!frontendUrl) {
+      console.log("FRONTEND_URL is missing in backend env");
+      return res.status(200).json(genericResponse);
+    }
+
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Reset your password",
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
+            <h2>Password Reset Request</h2>
+            <p>You requested to reset your password.</p>
+            <p>Click below to create a new password. This link expires in 10 minutes.</p>
+            <a href="${resetUrl}" style="display:inline-block;background:#000;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600;">
+              Reset Password
+            </a>
+            <p style="margin-top:24px;color:#666;font-size:14px;">
+              If you did not request this, you can ignore this email.
+            </p>
+          </div>
+        `,
+      });
+    } catch (emailError) {
+      console.log("PASSWORD RESET EMAIL ERROR:", emailError);
+    }
 
     return res.status(200).json(genericResponse);
   } catch (error) {
@@ -474,7 +523,7 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// 🔒 RESET PASSWORD
+// RESET PASSWORD
 export const resetPassword = async (req, res) => {
   try {
     const { token } = req.params;
@@ -490,7 +539,9 @@ export const resetPassword = async (req, res) => {
     const user = await User.findOne({
       resetPasswordToken: hashToken(token),
       resetPasswordExpires: { $gt: Date.now() },
-    }).select("+password +refreshTokens +resetPasswordToken +resetPasswordExpires");
+    }).select(
+      "+password +refreshTokens +resetPasswordToken +resetPasswordExpires"
+    );
 
     if (!user) {
       return res.status(400).json({
