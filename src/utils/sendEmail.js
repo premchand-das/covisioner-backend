@@ -1,34 +1,26 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendEmail = async ({ to, subject, html }) => {
-  try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      connectionTimeout: 30000,
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const info = await transporter.sendMail({
-      from: `"CoVisioner Platform" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    });
-
-    console.log("EMAIL SENT:", info.messageId);
-    return info;
-  } catch (error) {
-    console.error("EMAIL SEND ERROR:", error);
-    throw error;
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("Missing RESEND_API_KEY");
   }
+
+  const { data, error } = await resend.emails.send({
+    from: process.env.EMAIL_FROM || "CoVisioner <onboarding@resend.dev>",
+    to,
+    subject,
+    html,
+  });
+
+  if (error) {
+    console.error("RESEND EMAIL ERROR:", error);
+    throw new Error(error.message || "Failed to send email");
+  }
+
+  console.log("EMAIL SENT:", data?.id);
+  return data;
 };
 
 export default sendEmail;

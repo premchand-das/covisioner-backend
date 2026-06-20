@@ -68,6 +68,8 @@ app.use(passport.initialize());
 
 
 app.use("/api/auth", authRoutes);
+
+
 app.use("/api/protected", protectedRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/upload", uploadRoutes);
