@@ -13,8 +13,7 @@ router.get("/", protect, authorizeRoles("startup"), getAllTalent);
 
 router.get(
   "/username/:username",
-  protect,
-  authorizeRoles("startup"),
+ 
   getTalentByUsername
 );
 
