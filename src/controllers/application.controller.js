@@ -103,7 +103,7 @@ export const applyToJob = async (req, res) => {
     const populatedApplication = await Application.findById(application._id)
       .populate("job", "title employmentType location status")
       .populate("startup", "startupName logo industry")
-      .populate("applicant", "username email avatar")
+   
       .populate("talent", "username email avatar")
       .populate("talentProfile", "fullname headline skills avatar");
 
