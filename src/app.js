@@ -39,6 +39,9 @@ app.use(limiter);
 app.use(helmet());
 const allowedOrigins = [
   "http://localhost:3000",
+  "http://localhost:3001",
+  "https://covisioner.com",
+  "https://www.covisioner.com",
   process.env.CLIENT_URL,
   process.env.FRONTEND_URL,
 ].filter(Boolean);
@@ -86,7 +89,7 @@ app.use("/api/connections", connectionRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/conversations", conversationRoutes);
-app.use("/api/saved-jobs", savedJobRoutes);
+
 
 
 
