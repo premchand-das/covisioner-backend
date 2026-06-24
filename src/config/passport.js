@@ -5,7 +5,17 @@ import User from "../models/user.model.js";
 import dotenv from "dotenv";
 
 dotenv.config();
+
 const allowedRoles = ["talent", "startup"];
+
+const createSafeUsername = (profile, email) => {
+  const base =
+    profile.displayName?.replace(/\s+/g, "").toLowerCase() ||
+    profile.username?.replace(/\s+/g, "").toLowerCase() ||
+    email.split("@")[0];
+
+  return `${base}_${Math.floor(Math.random() * 10000)}`;
+};
 
 passport.use(
   new GoogleStrategy(
@@ -18,12 +28,7 @@ passport.use(
     async (req, accessToken, refreshToken, profile, done) => {
       try {
         const role = req.query.state;
-
-        if (!allowedRoles.includes(role)) {
-          return done(null, false);
-        }
-
-        const email = profile.emails?.[0]?.value;
+        const email = profile.emails?.[0]?.value?.toLowerCase();
 
         if (!email) {
           return done(null, false);
@@ -31,18 +36,34 @@ passport.use(
 
         let user = await User.findOne({ email });
 
-        if (!user) {
-          user = await User.create({
-            username: profile.displayName,
-            email,
-            role,
-            avatar: profile.photos?.[0]?.value,
-            authProvider: "google",
-            providerId: profile.id,
-            isVerified: true,
-            onboardingCompleted: false,
-          });
+        // Existing user login: role is already saved in DB
+        if (user) {
+          if (!user.providerId) user.providerId = profile.id;
+          if (!user.authProvider) user.authProvider = "google";
+          if (!user.avatar && profile.photos?.[0]?.value) {
+            user.avatar = profile.photos[0].value;
+          }
+          if (!user.isVerified) user.isVerified = true;
+
+          await user.save();
+          return done(null, user);
         }
+
+        // New Google signup: role is required
+        if (!allowedRoles.includes(role)) {
+          return done(null, false);
+        }
+
+        user = await User.create({
+          username: createSafeUsername(profile, email),
+          email,
+          role,
+          avatar: profile.photos?.[0]?.value || "",
+          authProvider: "google",
+          providerId: profile.id,
+          isVerified: true,
+          onboardingCompleted: false,
+        });
 
         return done(null, user);
       } catch (error) {
@@ -64,12 +85,7 @@ passport.use(
     async (req, accessToken, refreshToken, profile, done) => {
       try {
         const role = req.query.state;
-
-        if (!allowedRoles.includes(role)) {
-          return done(null, false);
-        }
-
-        const email = profile.emails?.[0]?.value;
+        const email = profile.emails?.[0]?.value?.toLowerCase();
 
         if (!email) {
           return done(null, false);
@@ -77,17 +93,32 @@ passport.use(
 
         let user = await User.findOne({ email });
 
-        if (!user) {
-          user = await User.create({
-            username: profile.username || profile.displayName,
-            email,
-            role,
-            avatar: profile.photos?.[0]?.value,
-            authProvider: "github",
-            providerId: profile.id,
-            isVerified: true,
-          });
+        if (user) {
+          if (!user.providerId) user.providerId = profile.id;
+          if (!user.authProvider) user.authProvider = "github";
+          if (!user.avatar && profile.photos?.[0]?.value) {
+            user.avatar = profile.photos[0].value;
+          }
+          if (!user.isVerified) user.isVerified = true;
+
+          await user.save();
+          return done(null, user);
         }
+
+        if (!allowedRoles.includes(role)) {
+          return done(null, false);
+        }
+
+        user = await User.create({
+          username: createSafeUsername(profile, email),
+          email,
+          role,
+          avatar: profile.photos?.[0]?.value || "",
+          authProvider: "github",
+          providerId: profile.id,
+          isVerified: true,
+          onboardingCompleted: false,
+        });
 
         return done(null, user);
       } catch (error) {
