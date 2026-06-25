@@ -31,12 +31,18 @@ const router = express.Router();
 
 const allowedRoles = ["talent", "startup"];
 
-router.get("/google", (req, res, next) => {
-  const role = req.query.role;
+const getSafeRole = (role) => {
+  const cleanRole = String(role || "").trim().toLowerCase();
 
-  if (!allowedRoles.includes(role)) {
-    return res.redirect(`${process.env.FRONTEND_URL}/signup?error=invalid_role`);
+  if (allowedRoles.includes(cleanRole)) {
+    return cleanRole;
   }
+
+  return "";
+};
+
+router.get("/google", (req, res, next) => {
+  const role = getSafeRole(req.query.role);
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
@@ -55,11 +61,7 @@ router.get(
 );
 
 router.get("/github", (req, res, next) => {
-  const role = req.query.role;
-
-  if (!allowedRoles.includes(role)) {
-    return res.redirect(`${process.env.FRONTEND_URL}/signup?error=invalid_role`);
-  }
+  const role = getSafeRole(req.query.role);
 
   passport.authenticate("github", {
     scope: ["user:email"],
@@ -82,7 +84,11 @@ router.post("/verify-email", validate(verifyEmailCodeSchema), verifyEmailCode);
 router.post("/login", validate(loginSchema), login);
 
 router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
-router.post("/reset-password/:token", validate(resetPasswordSchema), resetPassword);
+router.post(
+  "/reset-password/:token",
+  validate(resetPasswordSchema),
+  resetPassword
+);
 
 router.post("/set-role", protect, validate(setUserRoleSchema), setUserRole);
 router.post("/refresh", refreshAccessToken);
