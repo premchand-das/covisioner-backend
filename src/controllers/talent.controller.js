@@ -1,6 +1,10 @@
 import TalentProfile from "../models/talentProfile.model.js";
 import User from "../models/user.model.js";
 
+const escapeRegex = (value) => {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
 export const getAllTalent = async (req, res) => {
   try {
     const { search, skill, availability, page = 1, limit = 10 } = req.query;
@@ -62,9 +66,7 @@ export const getAllTalent = async (req, res) => {
 
 export const getTalentByUsername = async (req, res) => {
   try {
-    const username = String(req.params.username || "")
-      .trim()
-      .toLowerCase();
+    const username = String(req.params.username || "").trim();
 
     if (!username) {
       return res.status(400).json({
@@ -73,10 +75,15 @@ export const getTalentByUsername = async (req, res) => {
       });
     }
 
+    const safeUsername = escapeRegex(username);
+
     const user = await User.findOne({
-      username,
+      username: {
+        $regex: `^${safeUsername}$`,
+        $options: "i",
+      },
       role: "talent",
-    }).select("_id username email avatar role");
+    }).select("_id username email avatar role onboardingCompleted");
 
     if (!user) {
       return res.status(404).json({
@@ -88,7 +95,7 @@ export const getTalentByUsername = async (req, res) => {
     const profile = await TalentProfile.findOne({
       user: user._id,
     })
-      .populate("user", "username email avatar role")
+      .populate("user", "username email avatar role onboardingCompleted")
       .select("-__v")
       .lean();
 
