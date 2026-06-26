@@ -65,12 +65,15 @@ const jobSchema = new mongoose.Schema(
       index: true,
     },
 
-    salaryRange: {
-      min: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
+salaryRange: {
+  min: { type: Number, default: 0 },
+  max: { type: Number, default: 0 },
+  type: {
+    type: String,
+    enum: ["monthly", "yearly"],
+    default: "monthly",
+  },
+},
       max: {
         type: Number,
         default: 0,
